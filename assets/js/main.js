@@ -11,7 +11,6 @@
 
   const SITE = window.SITE || {};
 
-
   /* ==========================================================================
      HEADER STICKY
   ========================================================================== */
@@ -30,7 +29,6 @@
 
   window.addEventListener("scroll", onScroll, { passive: true });
   onScroll();
-
 
   /* ==========================================================================
      MENU MOBILE
@@ -58,7 +56,6 @@
       });
     });
   }
-
 
   /* ==========================================================================
      REVEAL ON SCROLL
@@ -97,7 +94,6 @@
     });
   }
 
-
   /* ==========================================================================
      ANIMAÇÃO DOS CONTADORES
   ========================================================================== */
@@ -109,8 +105,8 @@
 
     const target = parseFloat(
       el.dataset.count ||
-      rawText.replace(/[^\d.,]/g, "").replace(",", ".") ||
-      "0"
+        rawText.replace(/[^\d.,]/g, "").replace(",", ".") ||
+        "0"
     );
 
     const decimals = parseInt(
@@ -178,7 +174,6 @@
     });
   }
 
-
   /* ==========================================================================
      ESCAPE HTML
   ========================================================================== */
@@ -191,7 +186,6 @@
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
   }
-
 
   /* ==========================================================================
      RENDER · SERVIÇOS
@@ -267,7 +261,6 @@
     });
   }
 
-
   /* ==========================================================================
      RENDER · BARBEIROS
   ========================================================================== */
@@ -340,7 +333,6 @@
     });
   }
 
-
   /* ==========================================================================
      ANO DO FOOTER
   ========================================================================== */
@@ -352,29 +344,15 @@
       new Date().getFullYear();
   }
 
-
   /* ==========================================================================
      SUPABASE · LOGIN / PERFIL
   ========================================================================== */
-
-  /*
-     IMPORTANTE:
-
-     Coloca aqui a tua Publishable Key do Supabase.
-
-     NÃO coloques aqui uma service_role key.
-
-     Exemplo:
-
-     const SUPABASE_ANON_KEY = "sb_publishable_xxxxxxxxx";
-  */
 
   const SUPABASE_URL =
     "https://yfbtcynkjewuggqxabqv.supabase.co";
 
   const SUPABASE_ANON_KEY =
-    "A_TUA_PUBLISHABLE_KEY";
-
+    "sb_publishable_jBZxtMgKPbl601_8UmFIBw_lthLAMNn";
 
   /* ==========================================================================
      ELEMENTOS DO PERFIL
@@ -395,7 +373,6 @@
   const userName =
     document.getElementById("userName");
 
-
   /* ==========================================================================
      VERIFICAR SE SUPABASE FOI CARREGADO
   ========================================================================== */
@@ -405,8 +382,7 @@
   if (
     window.supabase &&
     typeof window.supabase.createClient === "function" &&
-    SUPABASE_ANON_KEY &&
-    SUPABASE_ANON_KEY !== "A_TUA_PUBLISHABLE_KEY"
+    SUPABASE_ANON_KEY
   ) {
     try {
       supabaseClient =
@@ -414,6 +390,8 @@
           SUPABASE_URL,
           SUPABASE_ANON_KEY
         );
+
+      console.log("Supabase inicializado com sucesso.");
     } catch (error) {
       console.error(
         "Erro ao inicializar o Supabase:",
@@ -422,10 +400,9 @@
     }
   } else {
     console.warn(
-      "Supabase não está configurado. Adiciona a Publishable Key no main.js."
+      "Supabase não foi carregado. Verifica o script do Supabase no index.html."
     );
   }
-
 
   /* ==========================================================================
      ESTADO VISUAL · UTILIZADOR NÃO AUTENTICADO
@@ -444,13 +421,13 @@
 
     if (userAvatar) {
       userAvatar.removeAttribute("src");
+      userAvatar.alt = "Avatar";
     }
 
     if (userName) {
       userName.textContent = "";
     }
   }
-
 
   /* ==========================================================================
      ESTADO VISUAL · UTILIZADOR AUTENTICADO
@@ -501,7 +478,6 @@
     }
   }
 
-
   /* ==========================================================================
      OBTER UTILIZADOR ATUAL
   ========================================================================== */
@@ -544,7 +520,6 @@
     }
   }
 
-
   /* ==========================================================================
      LOGIN COM GOOGLE
   ========================================================================== */
@@ -556,7 +531,7 @@
 
         if (!supabaseClient) {
           alert(
-            "O login ainda não está configurado. Verifica a Publishable Key do Supabase."
+            "O Supabase não foi carregado. Verifica o index.html e a Publishable Key."
           );
 
           return;
@@ -588,7 +563,8 @@
             );
 
             alert(
-              "Não foi possível iniciar o login com Google."
+              "Não foi possível iniciar o login com Google: " +
+              error.message
             );
 
             googleLoginBtn.disabled = false;
@@ -604,7 +580,8 @@
           );
 
           alert(
-            "Ocorreu um erro ao tentar entrar."
+            "Ocorreu um erro ao tentar entrar: " +
+            error.message
           );
 
           googleLoginBtn.disabled = false;
@@ -614,7 +591,6 @@
       }
     );
   }
-
 
   /* ==========================================================================
      LOGOUT
@@ -649,9 +625,6 @@
               "Não foi possível terminar a sessão."
             );
 
-            logoutBtn.disabled = false;
-            logoutBtn.textContent = "Sair";
-
             return;
           }
 
@@ -672,7 +645,6 @@
       }
     );
   }
-
 
   /* ==========================================================================
      DETETAR LOGIN / LOGOUT AUTOMATICAMENTE
@@ -698,13 +670,11 @@
     );
   }
 
-
   /* ==========================================================================
      VERIFICAR SESSÃO AO ABRIR O SITE
   ========================================================================== */
 
   updateUserInterface();
-
 
   /* ==========================================================================
      INICIALIZAR CONTEÚDO
@@ -712,7 +682,6 @@
 
   renderServices();
   renderBarbers();
-
 
   /* ==========================================================================
      RE-OBSERVAR ELEMENTOS CRIADOS DINAMICAMENTE
