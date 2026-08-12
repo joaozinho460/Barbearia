@@ -166,6 +166,120 @@
   const yearEl = document.getElementById("year");
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
+
+   /* ---------------- LOGIN GOOGLE / SUPABASE ---------------- */
+
+const SUPABASE_URL = "https://yfbtcynkjewuggqxabqv.supabase.co";
+const SUPABASE_ANON_KEY = "A_TUA_PUBLISHABLE_KEY";
+
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY
+);
+
+const googleLoginBtn = document.getElementById("googleLoginBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const userMenu = document.getElementById("userMenu");
+const userAvatar = document.getElementById("userAvatar");
+const userName = document.getElementById("userName");
+
+
+/* Entrar com Google */
+if (googleLoginBtn) {
+  googleLoginBtn.addEventListener("click", async () => {
+    try {
+      googleLoginBtn.disabled = true;
+      googleLoginBtn.textContent = "A entrar...";
+
+      const { error } = await supabaseClient.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+
+      if (error) {
+        console.error("Erro ao entrar com Google:", error);
+        alert("Não foi possível iniciar o login com Google.");
+        googleLoginBtn.disabled = false;
+        googleLoginBtn.textContent = "Entrar";
+      }
+
+    } catch (error) {
+      console.error(error);
+      googleLoginBtn.disabled = false;
+      googleLoginBtn.textContent = "Entrar";
+    }
+  });
+}
+
+
+/* Atualizar interface do utilizador */
+async function updateUserInterface() {
+  const {
+    data: { user }
+  } = await supabaseClient.auth.getUser();
+
+  if (user) {
+    if (googleLoginBtn) {
+      googleLoginBtn.hidden = true;
+    }
+
+    if (userMenu) {
+      userMenu.hidden = false;
+    }
+
+    if (userName) {
+      userName.textContent =
+        user.user_metadata?.full_name ||
+        user.user_metadata?.name ||
+        user.email ||
+        "Utilizador";
+    }
+
+    if (userAvatar) {
+      userAvatar.src =
+        user.user_metadata?.avatar_url ||
+        user.user_metadata?.picture ||
+        "";
+    }
+
+  } else {
+    if (googleLoginBtn) {
+      googleLoginBtn.hidden = false;
+    }
+
+    if (userMenu) {
+      userMenu.hidden = true;
+    }
+  }
+}
+
+
+/* Sair */
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", async () => {
+    const { error } = await supabaseClient.auth.signOut();
+
+    if (error) {
+      console.error("Erro ao sair:", error);
+      return;
+    }
+
+    updateUserInterface();
+  });
+}
+
+
+/* Detetar login/logout */
+supabaseClient.auth.onAuthStateChange(() => {
+  updateUserInterface();
+});
+
+
+/* Verificar sessão ao abrir o site */
+updateUserInterface();
+
   /* ---------------- init ---------------- */
   renderServices();
   renderBarbers();
