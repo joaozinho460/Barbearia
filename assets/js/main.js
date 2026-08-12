@@ -1,6 +1,6 @@
 /* ============================================================================
 BARBEARIA RICKGINO · MAIN.JS
-INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
+INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES + PERFIL
 ============================================================================= */
 
 (function () {
@@ -403,6 +403,22 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
     document.getElementById("userName");
 
   /* ==========================================================================
+  ELEMENTOS DO PERFIL
+  ========================================================================== */
+
+  const profileBookings =
+    document.getElementById("profileBookings");
+
+  const profileCurrentBookings =
+    document.getElementById("profileCurrentBookings");
+
+  const profileHistoryBookings =
+    document.getElementById("profileHistoryBookings");
+
+  const profileBookingsEmpty =
+    document.getElementById("profileBookingsEmpty");
+
+  /* ==========================================================================
   ESTADO · LOGOUT
   ========================================================================== */
 
@@ -424,6 +440,10 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
 
     if (userName) {
       userName.textContent = "";
+    }
+
+    if (profileBookings) {
+      profileBookings.hidden = true;
     }
   }
 
@@ -473,6 +493,10 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
         userAvatar.removeAttribute("src");
         userAvatar.alt = "Avatar";
       }
+    }
+
+    if (profileBookings) {
+      profileBookings.hidden = false;
     }
   }
 
@@ -526,16 +550,554 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   }
 
   /* ==========================================================================
+  PERFIL · MARCAÇÕES ATUAIS + HISTÓRICO
+  ========================================================================== */
+
+  function formatBookingDate(dateString) {
+    if (!dateString) return "Data não disponível";
+
+    const date = new Date(
+      dateString + "T00:00:00"
+    );
+
+    if (Number.isNaN(date.getTime())) {
+      return dateString;
+    }
+
+    return date.toLocaleDateString(
+      "pt-PT",
+      {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+        year: "numeric"
+      }
+    );
+  }
+
+  function normalizeBookingStatus(status) {
+    return String(status || "confirmed")
+      .toLowerCase()
+      .trim();
+  }
+
+  function isBookingInHistory(booking) {
+    const status =
+      normalizeBookingStatus(
+        booking.status
+      );
+
+    if (status === "cancelled") {
+      return true;
+    }
+
+    if (status === "completed") {
+      return true;
+    }
+
+    if (!booking.booking_date) {
+      return false;
+    }
+
+    const bookingDateTime =
+      new Date(
+        booking.booking_date +
+          "T" +
+          (booking.booking_time || "23:59:59")
+      );
+
+    return bookingDateTime < new Date();
+  }
+
+  function createBookingCard(booking) {
+    const card =
+      document.createElement("article");
+
+    card.className =
+      "profile-booking-card";
+
+    const status =
+      normalizeBookingStatus(
+        booking.status
+      );
+
+    const inHistory =
+      isBookingInHistory(booking);
+
+    let statusText =
+      "Confirmada";
+
+    if (status === "cancelled") {
+      statusText = "Cancelada";
+    } else if (
+      status === "completed"
+    ) {
+      statusText = "Concluída";
+    } else if (inHistory) {
+      statusText = "Concluída";
+    }
+
+    const statusClass =
+      status === "cancelled"
+        ? "cancelled"
+        : status === "completed" || inHistory
+          ? "completed"
+          : "confirmed";
+
+    const serviceName =
+      booking.service_name ||
+      "Serviço";
+
+    const bookingDate =
+      formatBookingDate(
+        booking.booking_date
+      );
+
+    const bookingTime =
+      booking.booking_time ||
+      "--:--";
+
+    card.innerHTML = `
+      <div class="profile-booking-top">
+        <div>
+          <span class="profile-booking-label">
+            Serviço
+          </span>
+
+          <h4>
+            ${escapeHtml(serviceName)}
+          </h4>
+        </div>
+
+        <span class="profile-booking-status ${statusClass}">
+          ${statusText}
+        </span>
+      </div>
+
+      <div class="profile-booking-info">
+
+        <div class="profile-booking-info-item">
+          <span>Data</span>
+          <strong>
+            ${escapeHtml(bookingDate)}
+          </strong>
+        </div>
+
+        <div class="profile-booking-info-item">
+          <span>Hora</span>
+          <strong>
+            ${escapeHtml(bookingTime)}
+          </strong>
+        </div>
+
+      </div>
+
+      <div class="profile-booking-reference">
+        Referência:
+        <span>
+          ${escapeHtml(String(booking.id || ""))}
+        </span>
+      </div>
+    `;
+
+    /*
+    Só permite cancelar marcações atuais.
+    */
+
+    const isCurrent =
+      !inHistory &&
+      status !== "cancelled" &&
+      status !== "completed";
+
+    if (isCurrent) {
+      const cancelButton =
+        document.createElement("button");
+
+      cancelButton.type = "button";
+
+      cancelButton.className =
+        "profile-cancel-btn";
+
+      cancelButton.textContent =
+        "Cancelar marcação";
+
+      cancelButton.addEventListener(
+        "click",
+        async () => {
+
+          const confirmed =
+            window.confirm(
+              "Tens a certeza que queres cancelar esta marcação?"
+            );
+
+          if (!confirmed) {
+            return;
+          }
+
+          if (!supabaseClient) {
+            alert(
+              "O Supabase não está disponível."
+            );
+
+            return;
+          }
+
+          cancelButton.disabled = true;
+
+          cancelButton.textContent =
+            "A cancelar...";
+
+          try {
+
+            const {
+              data: userData,
+              error: userError
+            } =
+              await supabaseClient.auth.getUser();
+
+            if (
+              userError ||
+              !userData ||
+              !userData.user
+            ) {
+              throw new Error(
+                "A sessão do utilizador não está disponível."
+              );
+            }
+
+            /*
+            Atualiza apenas a marcação
+            pertencente ao utilizador atual.
+            */
+
+            const {
+              error
+            } =
+              await supabaseClient
+                .from("bookings")
+                .update({
+                  status: "cancelled"
+                })
+                .eq(
+                  "id",
+                  booking.id
+                )
+                .eq(
+                  "user_id",
+                  userData.user.id
+                );
+
+            if (error) {
+              throw error;
+            }
+
+            alert(
+              "Marcação cancelada com sucesso."
+            );
+
+            await loadUserBookings();
+
+          } catch (error) {
+
+            console.error(
+              "Erro ao cancelar marcação:",
+              error
+            );
+
+            alert(
+              "Não foi possível cancelar a marcação: " +
+              (
+                error.message ||
+                "Erro desconhecido"
+              )
+            );
+
+            cancelButton.disabled =
+              false;
+
+            cancelButton.textContent =
+              "Cancelar marcação";
+          }
+        }
+      );
+
+      card.appendChild(
+        cancelButton
+      );
+    }
+
+    return card;
+  }
+
+  /* ==========================================================================
+  CARREGAR MARCAÇÕES DO UTILIZADOR
+  ========================================================================== */
+
+  async function loadUserBookings() {
+
+    if (
+      !supabaseClient ||
+      !profileBookings
+    ) {
+      return;
+    }
+
+    try {
+
+      const {
+        data: userData,
+        error: userError
+      } =
+        await supabaseClient.auth.getUser();
+
+      if (
+        userError ||
+        !userData ||
+        !userData.user
+      ) {
+        return;
+      }
+
+      const user =
+        userData.user;
+
+      const {
+        data: bookings,
+        error
+      } =
+        await supabaseClient
+          .from("bookings")
+          .select("*")
+          .eq(
+            "user_id",
+            user.id
+          )
+          .order(
+            "booking_date",
+            {
+              ascending: false
+            }
+          )
+          .order(
+            "booking_time",
+            {
+              ascending: false
+            }
+          );
+
+      if (error) {
+        throw error;
+      }
+
+      if (
+        profileCurrentBookings
+      ) {
+        profileCurrentBookings.innerHTML =
+          "";
+      }
+
+      if (
+        profileHistoryBookings
+      ) {
+        profileHistoryBookings.innerHTML =
+          "";
+      }
+
+      const currentBookings = [];
+      const historyBookings = [];
+
+      (bookings || []).forEach(
+        (booking) => {
+
+          if (
+            isBookingInHistory(
+              booking
+            )
+          ) {
+            historyBookings.push(
+              booking
+            );
+          } else {
+            currentBookings.push(
+              booking
+            );
+          }
+        }
+      );
+
+      /*
+      Ordenar marcações atuais
+      da mais próxima para a mais distante.
+      */
+
+      currentBookings.sort(
+        (a, b) => {
+
+          const dateA =
+            new Date(
+              `${a.booking_date}T${a.booking_time || "00:00"}`
+            );
+
+          const dateB =
+            new Date(
+              `${b.booking_date}T${b.booking_time || "00:00"}`
+            );
+
+          return (
+            dateA.getTime() -
+            dateB.getTime()
+          );
+        }
+      );
+
+      /*
+      Histórico:
+      mais recente primeiro.
+      */
+
+      historyBookings.sort(
+        (a, b) => {
+
+          const dateA =
+            new Date(
+              `${a.booking_date}T${a.booking_time || "00:00"}`
+            );
+
+          const dateB =
+            new Date(
+              `${b.booking_date}T${b.booking_time || "00:00"}`
+            );
+
+          return (
+            dateB.getTime() -
+            dateA.getTime()
+          );
+        }
+      );
+
+      if (
+        profileBookingsEmpty
+      ) {
+        profileBookingsEmpty.hidden =
+          currentBookings.length > 0 ||
+          historyBookings.length > 0;
+      }
+
+      /*
+      Renderizar atuais.
+      */
+
+      if (
+        profileCurrentBookings
+      ) {
+
+        if (
+          currentBookings.length === 0
+        ) {
+
+          profileCurrentBookings.innerHTML = `
+            <div class="profile-empty-message">
+              <strong>
+                Não tens marcações atuais.
+              </strong>
+
+              <span>
+                Faz uma marcação para aparecer aqui.
+              </span>
+            </div>
+          `;
+
+        } else {
+
+          currentBookings.forEach(
+            (booking) => {
+
+              profileCurrentBookings.appendChild(
+                createBookingCard(
+                  booking
+                )
+              );
+
+            }
+          );
+        }
+      }
+
+      /*
+      Renderizar histórico.
+      */
+
+      if (
+        profileHistoryBookings
+      ) {
+
+        if (
+          historyBookings.length === 0
+        ) {
+
+          profileHistoryBookings.innerHTML = `
+            <div class="profile-empty-message">
+              <strong>
+                Ainda não tens histórico.
+              </strong>
+
+              <span>
+                As tuas marcações concluídas ou canceladas aparecerão aqui.
+              </span>
+            </div>
+          `;
+
+        } else {
+
+          historyBookings.forEach(
+            (booking) => {
+
+              profileHistoryBookings.appendChild(
+                createBookingCard(
+                  booking
+                )
+              );
+
+            }
+          );
+        }
+      }
+
+      profileBookings.hidden =
+        false;
+
+    } catch (error) {
+
+      console.error(
+        "Erro ao carregar marcações:",
+        error
+      );
+
+      if (
+        profileCurrentBookings
+      ) {
+        profileCurrentBookings.innerHTML = `
+          <div class="profile-empty-message">
+            Não foi possível carregar as tuas marcações.
+          </div>
+        `;
+      }
+    }
+  }
+
+  /* ==========================================================================
   OBTER UTILIZADOR ATUAL
   ========================================================================== */
 
   async function updateUserInterface() {
+
     if (!supabaseClient) {
       showLoggedOutState();
       return;
     }
 
     try {
+
       const {
         data,
         error
@@ -543,26 +1105,40 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
         await supabaseClient.auth.getUser();
 
       if (error) {
+
         console.error(
           "Erro ao obter utilizador:",
           error
         );
 
         showLoggedOutState();
+
         return;
       }
 
-      if (data && data.user) {
-        showLoggedInState(data.user);
+      if (
+        data &&
+        data.user
+      ) {
+
+        showLoggedInState(
+          data.user
+        );
 
         await saveUserProfile(
           data.user
         );
+
+        await loadUserBookings();
+
       } else {
+
         showLoggedOutState();
+
       }
 
     } catch (error) {
+
       console.error(
         "Erro ao verificar sessão:",
         error
@@ -577,11 +1153,13 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   if (googleLoginBtn) {
+
     googleLoginBtn.addEventListener(
       "click",
       async () => {
 
         if (!supabaseClient) {
+
           alert(
             "O Supabase não foi carregado. Verifica o index.html."
           );
@@ -590,7 +1168,10 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
         }
 
         try {
-          googleLoginBtn.disabled = true;
+
+          googleLoginBtn.disabled =
+            true;
+
           googleLoginBtn.textContent =
             "A entrar...";
 
@@ -599,15 +1180,18 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
           } =
             await supabaseClient.auth
               .signInWithOAuth({
+
                 provider: "google",
 
                 options: {
                   redirectTo:
                     window.location.origin
                 }
+
               });
 
           if (error) {
+
             console.error(
               "Erro ao entrar com Google:",
               error
@@ -618,12 +1202,15 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
               error.message
             );
 
-            googleLoginBtn.disabled = false;
+            googleLoginBtn.disabled =
+              false;
+
             googleLoginBtn.textContent =
               "Entrar";
           }
 
         } catch (error) {
+
           console.error(
             "Erro no login:",
             error
@@ -634,7 +1221,9 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
             error.message
           );
 
-          googleLoginBtn.disabled = false;
+          googleLoginBtn.disabled =
+            false;
+
           googleLoginBtn.textContent =
             "Entrar";
         }
@@ -647,23 +1236,31 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   if (logoutBtn) {
+
     logoutBtn.addEventListener(
       "click",
       async () => {
 
-        if (!supabaseClient) return;
+        if (!supabaseClient) {
+          return;
+        }
 
         try {
-          logoutBtn.disabled = true;
+
+          logoutBtn.disabled =
+            true;
+
           logoutBtn.textContent =
             "A sair...";
 
           const {
             error
           } =
-            await supabaseClient.auth.signOut();
+            await supabaseClient.auth
+              .signOut();
 
           if (error) {
+
             console.error(
               "Erro ao sair:",
               error
@@ -679,14 +1276,19 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
           showLoggedOutState();
 
         } catch (error) {
+
           console.error(
             "Erro ao terminar sessão:",
             error
           );
 
         } finally {
-          logoutBtn.disabled = false;
-          logoutBtn.textContent = "Sair";
+
+          logoutBtn.disabled =
+            false;
+
+          logoutBtn.textContent =
+            "Sair";
         }
       }
     );
@@ -697,15 +1299,23 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   if (supabaseClient) {
+
     supabaseClient.auth.onAuthStateChange(
-      async (event, session) => {
+      async (
+        event,
+        session
+      ) => {
 
         console.log(
           "Estado de autenticação:",
           event
         );
 
-        if (session && session.user) {
+        if (
+          session &&
+          session.user
+        ) {
+
           showLoggedInState(
             session.user
           );
@@ -713,8 +1323,13 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
           await saveUserProfile(
             session.user
           );
+
+          await loadUserBookings();
+
         } else {
+
           showLoggedOutState();
+
         }
       }
     );
@@ -725,58 +1340,94 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   const bookingForm =
-    document.getElementById("bookingForm");
+    document.getElementById(
+      "bookingForm"
+    );
 
   const servicePicker =
-    document.getElementById("servicePicker");
+    document.getElementById(
+      "servicePicker"
+    );
 
   const barberPicker =
-    document.getElementById("barberPicker");
+    document.getElementById(
+      "barberPicker"
+    );
 
   const dateSlots =
-    document.getElementById("dateSlots");
+    document.getElementById(
+      "dateSlots"
+    );
 
   const timeSlots =
-    document.getElementById("timeSlots");
+    document.getElementById(
+      "timeSlots"
+    );
 
   const slotHint =
-    document.getElementById("slotHint");
+    document.getElementById(
+      "slotHint"
+    );
 
   const bookingSummary =
-    document.getElementById("bookingSummary");
+    document.getElementById(
+      "bookingSummary"
+    );
 
   const bookingSuccess =
-    document.getElementById("bookingSuccess");
+    document.getElementById(
+      "bookingSuccess"
+    );
 
   const successName =
-    document.getElementById("successName");
+    document.getElementById(
+      "successName"
+    );
 
   const successDetails =
-    document.getElementById("successDetails");
+    document.getElementById(
+      "successDetails"
+    );
 
   const successRef =
-    document.getElementById("successRef");
+    document.getElementById(
+      "successRef"
+    );
 
   const newBookingBtn =
-    document.getElementById("newBookingBtn");
+    document.getElementById(
+      "newBookingBtn"
+    );
 
   const nextBtn =
-    document.getElementById("nextBtn");
+    document.getElementById(
+      "nextBtn"
+    );
 
   const backBtn =
-    document.getElementById("backBtn");
+    document.getElementById(
+      "backBtn"
+    );
 
   const submitBtn =
-    document.getElementById("submitBtn");
+    document.getElementById(
+      "submitBtn"
+    );
 
   const progressFill =
-    document.getElementById("progressFill");
+    document.getElementById(
+      "progressFill"
+    );
 
   const stepLabels =
-    document.querySelectorAll(".step-label");
+    document.querySelectorAll(
+      ".step-label"
+    );
 
   const bookingSteps =
-    document.querySelectorAll(".booking-step");
+    document.querySelectorAll(
+      ".booking-step"
+    );
 
   let currentStep = 1;
 
@@ -790,39 +1441,60 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   function generateDates() {
-    if (!dateSlots) return;
 
-    dateSlots.innerHTML = "";
+    if (!dateSlots) {
+      return;
+    }
 
-    const today = new Date();
+    dateSlots.innerHTML =
+      "";
 
-    for (let i = 0; i < 14; i++) {
-      const date = new Date(today);
+    const today =
+      new Date();
+
+    for (
+      let i = 0;
+      i < 14;
+      i++
+    ) {
+
+      const date =
+        new Date(today);
 
       date.setDate(
         today.getDate() + i
       );
 
       const isoDate =
-        date.toISOString().split("T")[0];
+        date.toISOString()
+          .split("T")[0];
 
       const dayName =
         date.toLocaleDateString(
           "pt-PT",
-          { weekday: "short" }
+          {
+            weekday: "short"
+          }
         );
 
       const dayNumber =
         date.toLocaleDateString(
           "pt-PT",
-          { day: "2-digit" }
+          {
+            day: "2-digit"
+          }
         );
 
       const button =
-        document.createElement("button");
+        document.createElement(
+          "button"
+        );
 
-      button.type = "button";
-      button.className = "date-slot";
+      button.type =
+        "button";
+
+      button.className =
+        "date-slot";
 
       button.dataset.date =
         isoDate;
@@ -838,26 +1510,38 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
       button.addEventListener(
         "click",
         () => {
+
           document
-            .querySelectorAll(".date-slot")
-            .forEach((btn) => {
-              btn.classList.remove(
-                "is-selected"
-              );
-            });
+            .querySelectorAll(
+              ".date-slot"
+            )
+            .forEach(
+              (btn) => {
+
+                btn.classList.remove(
+                  "is-selected"
+                );
+
+              }
+            );
 
           button.classList.add(
             "is-selected"
           );
 
-          selectedDate = isoDate;
-          selectedTime = null;
+          selectedDate =
+            isoDate;
+
+          selectedTime =
+            null;
 
           loadAvailableTimes();
         }
       );
 
-      dateSlots.appendChild(button);
+      dateSlots.appendChild(
+        button
+      );
     }
   }
 
@@ -866,22 +1550,31 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   function loadAvailableTimes() {
-    if (!timeSlots) return;
 
-    timeSlots.innerHTML = "";
+    if (!timeSlots) {
+      return;
+    }
+
+    timeSlots.innerHTML =
+      "";
 
     if (!selectedDate) {
+
       if (slotHint) {
+
         slotHint.textContent =
           "Seleciona uma data para ver os horários disponíveis.";
+
       }
 
       return;
     }
 
     if (slotHint) {
+
       slotHint.textContent =
         "Escolhe um horário disponível.";
+
     }
 
     const times = [
@@ -904,89 +1597,117 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
       "19:00"
     ];
 
-    times.forEach((time) => {
-      const button =
-        document.createElement("button");
+    times.forEach(
+      (time) => {
 
-      button.type = "button";
-      button.className = "time-slot";
-      button.textContent = time;
-
-      button.dataset.time = time;
-
-      button.addEventListener(
-        "click",
-        async () => {
-
-          if (!supabaseClient) {
-            alert(
-              "O sistema de marcações não está ligado ao Supabase."
-            );
-            return;
-          }
-
-          const {
-            data,
-            error
-          } =
-            await supabaseClient
-              .from("bookings")
-              .select("id")
-              .eq(
-                "booking_date",
-                selectedDate
-              )
-              .eq(
-                "booking_time",
-                time
-              )
-              .neq(
-                "status",
-                "cancelled"
-              )
-              .limit(1);
-
-          if (error) {
-            console.error(
-              "Erro ao verificar horário:",
-              error
-            );
-
-            alert(
-              "Não foi possível verificar este horário."
-            );
-
-            return;
-          }
-
-          if (data && data.length > 0) {
-            alert(
-              "Este horário já está ocupado. Escolhe outro."
-            );
-
-            button.disabled = true;
-
-            return;
-          }
-
-          document
-            .querySelectorAll(".time-slot")
-            .forEach((btn) => {
-              btn.classList.remove(
-                "is-selected"
-              );
-            });
-
-          button.classList.add(
-            "is-selected"
+        const button =
+          document.createElement(
+            "button"
           );
 
-          selectedTime = time;
-        }
-      );
+        button.type =
+          "button";
 
-      timeSlots.appendChild(button);
-    });
+        button.className =
+          "time-slot";
+
+        button.textContent =
+          time;
+
+        button.dataset.time =
+          time;
+
+        button.addEventListener(
+          "click",
+          async () => {
+
+            if (!supabaseClient) {
+
+              alert(
+                "O sistema de marcações não está ligado ao Supabase."
+              );
+
+              return;
+            }
+
+            const {
+              data,
+              error
+            } =
+              await supabaseClient
+                .from("bookings")
+                .select("id")
+                .eq(
+                  "booking_date",
+                  selectedDate
+                )
+                .eq(
+                  "booking_time",
+                  time
+                )
+                .neq(
+                  "status",
+                  "cancelled"
+                )
+                .limit(1);
+
+            if (error) {
+
+              console.error(
+                "Erro ao verificar horário:",
+                error
+              );
+
+              alert(
+                "Não foi possível verificar este horário."
+              );
+
+              return;
+            }
+
+            if (
+              data &&
+              data.length > 0
+            ) {
+
+              alert(
+                "Este horário já está ocupado. Escolhe outro."
+              );
+
+              button.disabled =
+                true;
+
+              return;
+            }
+
+            document
+              .querySelectorAll(
+                ".time-slot"
+              )
+              .forEach(
+                (btn) => {
+
+                  btn.classList.remove(
+                    "is-selected"
+                  );
+
+                }
+              );
+
+            button.classList.add(
+              "is-selected"
+            );
+
+            selectedTime =
+              time;
+          }
+        );
+
+        timeSlots.appendChild(
+          button
+        );
+      }
+    );
   }
 
   /* ==========================================================================
@@ -994,19 +1715,28 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   function renderBookingServices() {
-    if (!servicePicker || !SITE.SERVICES) {
+
+    if (
+      !servicePicker ||
+      !SITE.SERVICES
+    ) {
       return;
     }
 
-    servicePicker.innerHTML = "";
+    servicePicker.innerHTML =
+      "";
 
     SITE.SERVICES.forEach(
       (service) => {
 
         const button =
-          document.createElement("button");
+          document.createElement(
+            "button"
+          );
 
-        button.type = "button";
+        button.type =
+          "button";
+
         button.className =
           "service-option";
 
@@ -1016,9 +1746,11 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
         button.innerHTML =
           "<strong>" +
           escapeHtml(
-            service.name || "Serviço"
+            service.name ||
+            "Serviço"
           ) +
           "</strong>" +
+
           (
             service.price
               ? "<span>" +
@@ -1037,11 +1769,15 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
               .querySelectorAll(
                 ".service-option"
               )
-              .forEach((btn) => {
-                btn.classList.remove(
-                  "is-selected"
-                );
-              });
+              .forEach(
+                (btn) => {
+
+                  btn.classList.remove(
+                    "is-selected"
+                  );
+
+                }
+              );
 
             button.classList.add(
               "is-selected"
@@ -1064,19 +1800,28 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   function renderBookingBarbers() {
-    if (!barberPicker || !SITE.BARBERS) {
+
+    if (
+      !barberPicker ||
+      !SITE.BARBERS
+    ) {
       return;
     }
 
-    barberPicker.innerHTML = "";
+    barberPicker.innerHTML =
+      "";
 
     SITE.BARBERS.forEach(
       (barber) => {
 
         const button =
-          document.createElement("button");
+          document.createElement(
+            "button"
+          );
 
-        button.type = "button";
+        button.type =
+          "button";
+
         button.className =
           "barber-option";
 
@@ -1086,7 +1831,8 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
         button.innerHTML =
           "<strong>" +
           escapeHtml(
-            barber.name || "Barbeiro"
+            barber.name ||
+            "Barbeiro"
           ) +
           "</strong>" +
 
@@ -1105,11 +1851,15 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
               .querySelectorAll(
                 ".barber-option"
               )
-              .forEach((btn) => {
-                btn.classList.remove(
-                  "is-selected"
-                );
-              });
+              .forEach(
+                (btn) => {
+
+                  btn.classList.remove(
+                    "is-selected"
+                  );
+
+                }
+              );
 
             button.classList.add(
               "is-selected"
@@ -1132,10 +1882,13 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   function showStep(step) {
-    currentStep = step;
+
+    currentStep =
+      step;
 
     bookingSteps.forEach(
       (section) => {
+
         const sectionStep =
           Number(
             section.dataset.step
@@ -1143,11 +1896,13 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
 
         section.hidden =
           sectionStep !== step;
+
       }
     );
 
     stepLabels.forEach(
       (label) => {
+
         const labelStep =
           Number(
             label.dataset.step
@@ -1157,28 +1912,37 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
           "is-active",
           labelStep <= step
         );
+
       }
     );
 
     if (progressFill) {
+
       progressFill.style.width =
         ((step - 1) / 4) * 100 +
         "%";
+
     }
 
     if (backBtn) {
+
       backBtn.hidden =
         step === 1;
+
     }
 
     if (nextBtn) {
+
       nextBtn.hidden =
         step === 5;
+
     }
 
     if (submitBtn) {
+
       submitBtn.hidden =
         step !== 5;
+
     }
   }
 
@@ -1189,7 +1953,9 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   function validateStep(step) {
 
     if (step === 1) {
+
       if (!selectedService) {
+
         alert(
           "Escolhe primeiro um serviço."
         );
@@ -1199,7 +1965,9 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
     }
 
     if (step === 2) {
+
       if (!selectedBarber) {
+
         alert(
           "Escolhe primeiro um barbeiro."
         );
@@ -1209,7 +1977,9 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
     }
 
     if (step === 3) {
+
       if (!selectedDate) {
+
         alert(
           "Escolhe uma data."
         );
@@ -1218,6 +1988,7 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
       }
 
       if (!selectedTime) {
+
         alert(
           "Escolhe um horário."
         );
@@ -1227,6 +1998,7 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
     }
 
     if (step === 4) {
+
       const nameInput =
         document.getElementById(
           "bkName"
@@ -1241,6 +2013,7 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
         !nameInput ||
         !nameInput.value.trim()
       ) {
+
         alert(
           "Indica o teu nome."
         );
@@ -1252,6 +2025,7 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
         !phoneInput ||
         !phoneInput.value.trim()
       ) {
+
         alert(
           "Indica o teu número de telemóvel."
         );
@@ -1268,7 +2042,10 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   function renderBookingSummary() {
-    if (!bookingSummary) return;
+
+    if (!bookingSummary) {
+      return;
+    }
 
     const name =
       document.getElementById(
@@ -1283,32 +2060,52 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
     bookingSummary.innerHTML = `
       <div class="summary-row">
         <span>Serviço</span>
-        <strong>${escapeHtml(selectedService || "")}</strong>
+        <strong>
+          ${escapeHtml(
+            selectedService || ""
+          )}
+        </strong>
       </div>
 
       <div class="summary-row">
         <span>Barbeiro</span>
-        <strong>${escapeHtml(selectedBarber || "")}</strong>
+        <strong>
+          ${escapeHtml(
+            selectedBarber || ""
+          )}
+        </strong>
       </div>
 
       <div class="summary-row">
         <span>Data</span>
-        <strong>${escapeHtml(selectedDate || "")}</strong>
+        <strong>
+          ${escapeHtml(
+            selectedDate || ""
+          )}
+        </strong>
       </div>
 
       <div class="summary-row">
         <span>Hora</span>
-        <strong>${escapeHtml(selectedTime || "")}</strong>
+        <strong>
+          ${escapeHtml(
+            selectedTime || ""
+          )}
+        </strong>
       </div>
 
       <div class="summary-row">
         <span>Nome</span>
-        <strong>${escapeHtml(name)}</strong>
+        <strong>
+          ${escapeHtml(name)}
+        </strong>
       </div>
 
       <div class="summary-row">
         <span>Telemóvel</span>
-        <strong>${escapeHtml(phone)}</strong>
+        <strong>
+          ${escapeHtml(phone)}
+        </strong>
       </div>
     `;
   }
@@ -1318,22 +2115,33 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   if (nextBtn) {
+
     nextBtn.addEventListener(
       "click",
       () => {
 
-        if (!validateStep(currentStep)) {
+        if (
+          !validateStep(
+            currentStep
+          )
+        ) {
           return;
         }
 
-        if (currentStep === 4) {
+        if (
+          currentStep === 4
+        ) {
           renderBookingSummary();
         }
 
-        if (currentStep < 5) {
+        if (
+          currentStep < 5
+        ) {
+
           showStep(
             currentStep + 1
           );
+
         }
       }
     );
@@ -1344,14 +2152,19 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   if (backBtn) {
+
     backBtn.addEventListener(
       "click",
       () => {
 
-        if (currentStep > 1) {
+        if (
+          currentStep > 1
+        ) {
+
           showStep(
             currentStep - 1
           );
+
         }
       }
     );
@@ -1362,6 +2175,7 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   if (bookingForm) {
+
     bookingForm.addEventListener(
       "submit",
       async (event) => {
@@ -1369,6 +2183,7 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
         event.preventDefault();
 
         if (!supabaseClient) {
+
           alert(
             "O Supabase não está disponível."
           );
@@ -1388,6 +2203,7 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
           !userData ||
           !userData.user
         ) {
+
           alert(
             "Para fazer uma marcação tens de entrar com a tua conta Google."
           );
@@ -1413,9 +2229,11 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
           );
 
         const nome =
-          nameInput?.value.trim() || "";
+          nameInput?.value.trim() ||
+          "";
 
         if (!nome) {
+
           alert(
             "Indica o teu nome."
           );
@@ -1426,6 +2244,7 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
         }
 
         if (!selectedService) {
+
           alert(
             "Serviço em falta."
           );
@@ -1436,6 +2255,7 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
         }
 
         if (!selectedBarber) {
+
           alert(
             "Barbeiro em falta."
           );
@@ -1445,7 +2265,11 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
           return;
         }
 
-        if (!selectedDate || !selectedTime) {
+        if (
+          !selectedDate ||
+          !selectedTime
+        ) {
+
           alert(
             "Data ou horário em falta."
           );
@@ -1456,7 +2280,10 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
         }
 
         if (submitBtn) {
-          submitBtn.disabled = true;
+
+          submitBtn.disabled =
+            true;
+
           submitBtn.textContent =
             "A confirmar...";
         }
@@ -1483,6 +2310,7 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
               );
 
           if (profileError) {
+
             console.error(
               "Erro no profile:",
               profileError
@@ -1522,11 +2350,13 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
             existingBooking &&
             existingBooking.length > 0
           ) {
+
             alert(
               "Este horário acabou de ser ocupado. Escolhe outro."
             );
 
-            selectedTime = null;
+            selectedTime =
+              null;
 
             loadAvailableTimes();
 
@@ -1551,7 +2381,9 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
             await supabaseClient
               .from("bookings")
               .insert({
-                user_id: user.id,
+
+                user_id:
+                  user.id,
 
                 service_name:
                   serviceName,
@@ -1564,6 +2396,7 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
 
                 status:
                   "confirmed"
+
               })
               .select()
               .single();
@@ -1577,68 +2410,99 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
           -------------------------------------------------------------- */
 
           if (successName) {
+
             successName.textContent =
               nome;
+
           }
 
           if (successDetails) {
+
             successDetails.innerHTML = `
               <p>
                 <strong>Serviço:</strong>
-                ${escapeHtml(selectedService)}
+                ${escapeHtml(
+                  selectedService
+                )}
               </p>
 
               <p>
                 <strong>Barbeiro:</strong>
-                ${escapeHtml(selectedBarber)}
+                ${escapeHtml(
+                  selectedBarber
+                )}
               </p>
 
               <p>
                 <strong>Data:</strong>
-                ${escapeHtml(selectedDate)}
+                ${escapeHtml(
+                  selectedDate
+                )}
               </p>
 
               <p>
                 <strong>Hora:</strong>
-                ${escapeHtml(selectedTime)}
+                ${escapeHtml(
+                  selectedTime
+                )}
               </p>
             `;
+
           }
 
           if (successRef) {
+
             successRef.textContent =
               booking.id;
+
           }
 
           bookingForm
             .querySelectorAll(
               ".booking-step"
             )
-            .forEach((step) => {
-              step.hidden = true;
-            });
+            .forEach(
+              (step) => {
+
+                step.hidden =
+                  true;
+
+              }
+            );
 
           if (bookingSuccess) {
+
             bookingSuccess.hidden =
               false;
+
           }
 
           if (nextBtn) {
-            nextBtn.hidden = true;
+            nextBtn.hidden =
+              true;
           }
 
           if (backBtn) {
-            backBtn.hidden = true;
+            backBtn.hidden =
+              true;
           }
 
           if (submitBtn) {
-            submitBtn.hidden = true;
+            submitBtn.hidden =
+              true;
           }
 
           console.log(
             "Marcação criada:",
             booking
           );
+
+          /*
+          Atualizar imediatamente
+          o perfil do utilizador.
+          */
+
+          await loadUserBookings();
 
         } catch (error) {
 
@@ -1649,15 +2513,22 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
 
           alert(
             "Não foi possível confirmar a marcação: " +
-            (error.message || "Erro desconhecido")
+            (
+              error.message ||
+              "Erro desconhecido"
+            )
           );
 
         } finally {
 
           if (submitBtn) {
-            submitBtn.disabled = false;
+
+            submitBtn.disabled =
+              false;
+
             submitBtn.textContent =
               "Confirmar marcação";
+
           }
         }
       }
@@ -1669,32 +2540,50 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   if (newBookingBtn) {
+
     newBookingBtn.addEventListener(
       "click",
       () => {
 
-        selectedService = null;
-        selectedBarber = null;
-        selectedDate = null;
-        selectedTime = null;
+        selectedService =
+          null;
+
+        selectedBarber =
+          null;
+
+        selectedDate =
+          null;
+
+        selectedTime =
+          null;
 
         document
           .querySelectorAll(
             ".service-option, .barber-option, .date-slot, .time-slot"
           )
-          .forEach((button) => {
-            button.classList.remove(
-              "is-selected"
-            );
-          });
+          .forEach(
+            (button) => {
+
+              button.classList.remove(
+                "is-selected"
+              );
+
+            }
+          );
 
         if (bookingSuccess) {
-          bookingSuccess.hidden = true;
+
+          bookingSuccess.hidden =
+            true;
+
         }
 
         bookingSteps.forEach(
           (step) => {
-            step.hidden = true;
+
+            step.hidden =
+              true;
+
           }
         );
 
@@ -1708,8 +2597,11 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   renderBookingServices();
+
   renderBookingBarbers();
+
   generateDates();
+
   showStep(1);
 
   /* ==========================================================================
@@ -1723,6 +2615,7 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
   ========================================================================== */
 
   renderServices();
+
   renderBarbers();
 
   /* ==========================================================================
@@ -1746,9 +2639,11 @@ INTERAÇÕES + LOGIN GOOGLE + SUPABASE + MARCAÇÕES
           rect.top <
           window.innerHeight
         ) {
+
           el.classList.add(
             "is-visible"
           );
+
         }
       }
     });
